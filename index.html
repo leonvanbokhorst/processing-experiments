@@ -3,28 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generative Narrative</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/p5.js"></script>
-    <!-- Optional: Add p5.sound library if needed -->
-    <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.4/addons/p5.sound.min.js"></script> -->
+    <title>Ant Colony Simulation - Phase 1</title>
     <style>
-        body {
-            padding: 0;
-            margin: 0;
-            overflow: hidden; /* Prevent scrollbars */
-            background-color: #222; /* Dark background */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        main {
-            /* This will hold the canvas */
-        }
+        body { margin: 0; overflow: hidden; background-color: #222; } /* Basic styling */
+        canvas { display: block; } /* Prevent scrollbars */
     </style>
 </head>
 <body>
-    <main></main>
-    <script src="sketch.js"></script>
+    <!-- The p5.js canvas will be attached here -->
+    <script src="./node_modules/p5/lib/p5.min.js"></script>
+    <!-- Our compiled sketch will be loaded here -->
+    <script type="module" src="./dist/sketch.js"></script> 
 </body>
 </html> 

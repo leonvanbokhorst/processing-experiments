@@ -1,13 +1,13 @@
 ---
 description: 
-globs: 
+globs: *.ts,*.tsx
 alwaysApply: false
 ---
-This Padawan interprets this to mean striving for code that is not only functional but also:
-Clear and Readable: Easy to understand, like a well-told story.
-Efficient: Especially within the draw() loop, avoiding unnecessary computations.
-Modular: Breaking down complex patterns into reusable functions.
-Leverages Processing: Making good use of Processing's built-in capabilities for graphics, interaction, and animation.
-Well-Typed: Applying Python type hints where they enhance clarity.
-I will endeavor to uphold this standard in all the Processing sketches we create together.
+Ensure p5.js sketches follow best practices for quality, readability, and efficiency.
 
+- Always explicitly declare types for variables and function parameters.
+- Use p5 in instance mode (new p5(sketch)) for better modularity.
+- Clearly structure code into setup(), draw(), and modular helper functions or classes.
+- Avoid global variables unless strictly necessary.
+- Limit computational overhead inside the draw() loop.
+- Include concise, purposeful comments explaining intentions and visual logic.
