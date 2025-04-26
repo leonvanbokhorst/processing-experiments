@@ -12,17 +12,22 @@ class Ant {
 
         // << New: Steering and Sensing parameters
         this.maxSpeed = 3; // Max speed limit
-        this.maxForce = 0.2; // Max steering force limit
-        this.senseDistance = 15; // << Modified: How far ahead to sense (20 to 15)
+        this.maxForce = 0.7; // Max steering force limit
+        this.senseDistance = 20; // << Modified: How far ahead to sense (20 to 15)
         this.senseAngle = PI / 4; // Angle offset for side sensors (45 degrees)
 
         // --- Q-Learning Parameters ---
         this.qTable = {}; // Using a simple Object for now: qTable[stateString] = {action1: value, action2: value}
         this.learningRate = 0.1; // Alpha: How quickly we accept new Q-values
-        this.discountFactor = 0.9; // Gamma: Importance of future rewards
-        this.epsilon = 0.1; // Exploration rate (10% chance of random action)
+        this.discountFactor = 0.95; // Gamma: Importance of future rewards
+        this.epsilon = 0.3; // Exploration rate (10% chance of random action)
         this.actions = [-this.senseAngle / 2, 0, this.senseAngle / 2]; // Actions: Steer left, straight, right (adjust angles as needed)
-        this.prevStateAction = null; // Store { state: s, action: a } for Q-update
+        // --- Experience Replay Parameters ---
+        this.replayBuffer = [];
+        this.replayBufferSize = 1500; // Max number of experiences to store
+        this.batchSize = 16; // Number of experiences to sample for learning
+        // --- End Experience Replay ---
+        this.prevStateAction = null; // Store { state: s, action: a } for Q-update (Original Q-learning, will be replaced)
         // -----------------------------
         this.wasExploring = false; // << Visualization: Flag set true if last action was random exploration
         this.exploreHighlightTimer = 0; // << Visualization: Timer to keep highlight for a few frames
@@ -118,7 +123,7 @@ class Ant {
         this.checkEdges(); // Wrap around if needed
         const positionAfterMove = this.position.copy(); // Position after move and edge check
 
-        // --- Q-Learning Update --- 
+        // --- Q-Learning Update (Now handles storing experience) --- 
         const nextStateKey = this.getCurrentState(buffer); // Get state *after* moving
         
         // --- Calculate Reward --- 
@@ -151,33 +156,30 @@ class Ant {
         }
         // -----------------------
         
-        // If we have a previous state/action pair to update...
-        if (this.prevStateAction) {
+        // --- Store Experience in Replay Buffer ---
+        if (this.prevStateAction) { // Only store if we have a previous state/action
              const s = this.prevStateAction.state;
              const a = this.prevStateAction.action;
              const s_prime = nextStateKey; 
              const r = reward; // Use the calculated reward
+             
+             // Add experience to buffer
+             this.replayBuffer.push({ state: s, action: a, reward: r, nextState: s_prime });
 
-             // Ensure Q-table entries exist (might be redundant if initialized above, but safe)
-             if (!this.qTable[s]) this.qTable[s] = {};
-             if (this.qTable[s][a] === undefined) this.qTable[s][a] = 0;
-             if (!this.qTable[s_prime]) { // Ensure next state exists for maxQ calculation
-                 this.qTable[s_prime] = {};
-                  this.actions.forEach(next_action => {
-                      this.qTable[s_prime][next_action] = 0;
-                  });
+             // Ensure buffer doesn't exceed max size
+             if (this.replayBuffer.length > this.replayBufferSize) {
+                 this.replayBuffer.shift(); // Remove the oldest experience (FIFO)
              }
 
-             // Q-Learning formula: Q(s, a) = Q(s, a) + alpha * (r + gamma * max_a'(Q(s', a')) - Q(s, a))
-             const oldQ = this.qTable[s][a];
-             const maxNextQ = this.qTable[s_prime][this.getBestAction(s_prime)]; // Q-value of best action from next state
-             const newQ = oldQ + this.learningRate * (r + this.discountFactor * maxNextQ - oldQ);
-             
-             this.qTable[s][a] = newQ;
-            // console.log(`Updated Q(${s}, ${a.toFixed(2)}): ${oldQ.toFixed(3)} -> ${newQ.toFixed(3)} (r=${r}, maxNextQ=${maxNextQ.toFixed(3)})`);
+             // --- Trigger Learning from Buffer ---
+             if (this.replayBuffer.length >= this.batchSize) {
+                 this.learnFromReplayBuffer();
+             }
         }
+        // --- Remove Old Immediate Q-Learning Update --- 
+        // <<<<< The old Q-learning update block that was here is now REMOVED >>>>>
         
-        // Store the state and action *we just took* for the *next* iteration's update
+        // Store the state and action *we just took* for the *next* iteration's experience tuple
         this.prevStateAction = stateActionToUpdate;
         // ------------------------
     }
@@ -419,5 +421,52 @@ class Ant {
         }
         
         return info;
+    }
+
+    // << New: Method to learn from a batch of experiences sampled from the replay buffer >>
+    learnFromReplayBuffer() {
+        if (this.replayBuffer.length < this.batchSize) {
+            return; // Not enough experiences to learn yet
+        }
+
+        // Sample a mini-batch of experiences randomly
+        let miniBatch = [];
+        for (let i = 0; i < this.batchSize; i++) {
+            const index = floor(random(this.replayBuffer.length));
+            miniBatch.push(this.replayBuffer[index]);
+        }
+
+        // Perform Q-update for each experience in the mini-batch
+        for (let experience of miniBatch) {
+            const { state: s, action: a, reward: r, nextState: s_prime } = experience;
+
+            // Ensure Q-table entries exist for s and s_prime
+            // Initialize state s if it doesn't exist
+            if (!this.qTable[s]) {
+                this.qTable[s] = {};
+                this.actions.forEach(act => { this.qTable[s][act] = 0; });
+            }
+             // Initialize action in state s if it doesn't exist
+            if (this.qTable[s][a] === undefined) {
+                this.qTable[s][a] = 0;
+            }
+            // Initialize state s_prime if it doesn't exist
+            if (!this.qTable[s_prime]) {
+                this.qTable[s_prime] = {};
+                this.actions.forEach(next_action => { this.qTable[s_prime][next_action] = 0; });
+            }
+
+            // Q-Learning formula: Q(s, a) = Q(s, a) + alpha * (r + gamma * max_a'(Q(s', a')) - Q(s, a))
+            const oldQ = this.qTable[s][a];
+            // Find the best Q-value for the next state (max_a' Q(s', a'))
+            const maxNextQ = this.qTable[s_prime][this.getBestAction(s_prime)]; 
+            
+            const newQ = oldQ + this.learningRate * (r + this.discountFactor * maxNextQ - oldQ);
+            
+            // Update the Q-table
+            this.qTable[s][a] = newQ;
+            // Optional console log for debugging sampled updates:
+            // console.log(`Replay Update Q(${s}, ${a.toFixed(2)}): ${oldQ.toFixed(3)} -> ${newQ.toFixed(3)} (r=${r}, maxNextQ=${maxNextQ.toFixed(3)})`);
+        }
     }
 } 
