@@ -53,7 +53,7 @@ class Ant {
             // Explore: Choose a random action
             chosenAction = random(this.actions);
             this.wasExploring = true; // Keep this flag if needed elsewhere, but timer is main display logic now
-            this.exploreHighlightTimer = 5; // << Set timer on exploration
+            this.exploreHighlightTimer = 20; // << Set timer on exploration
             // console.log(`Ant ${this.position.x.toFixed(0)} exploring: random action ${chosenAction.toFixed(2)}`);
         } else {
             // Exploit: Choose the best known action
@@ -214,7 +214,7 @@ class Ant {
             fill(255); // White for searching ants
         }
         noStroke();
-        ellipse(0, 0, 8, 8); // Draw a small circle
+        ellipse(0, 0, 5, 5); // Draw a smaller circle (was 8x8)
         pop(); // Restore previous drawing styles
     }
 
@@ -236,7 +236,7 @@ class Ant {
                 // Drop stronger/different pheromone when returning
                 buffer.fill(0, 255, 255, 200); // Cyan for returning ants, high alpha
                 buffer.noStroke();
-                buffer.ellipse(this.position.x, this.position.y, 5, 5); // Slightly larger trail
+                buffer.ellipse(this.position.x, this.position.y, 3, 3); // Smaller trail (was 5x5)
             } else {
                  // Regular pheromone when searching - LET'S NOT DROP SEARCHING TRAILS FOR NOW
                  // This makes following return trails clearer
@@ -394,5 +394,30 @@ class Ant {
             }
         }
          return avoidanceForce; // Return zero vector if no collision predicted
+    }
+
+    // << Phase 6: Method to get Q-Table information for the current state
+    getQInfo(buffer) {
+        const currentStateKey = this.getCurrentState(buffer);
+        const qValues = this.qTable[currentStateKey];
+
+        let info = {
+            state: currentStateKey,
+            qLeft: 'N/A',
+            qStraight: 'N/A',
+            qRight: 'N/A'
+        };
+
+        if (qValues) {
+            // Assuming this.actions is [-angle, 0, +angle]
+            info.qLeft = qValues[this.actions[0]] !== undefined ? qValues[this.actions[0]].toFixed(3) : 'N/A';
+            info.qStraight = qValues[this.actions[1]] !== undefined ? qValues[this.actions[1]].toFixed(3) : 'N/A';
+            info.qRight = qValues[this.actions[2]] !== undefined ? qValues[this.actions[2]].toFixed(3) : 'N/A';
+        } else {
+            // State not yet encountered
+            info.state += " (Unknown)";
+        }
+        
+        return info;
     }
 } 
