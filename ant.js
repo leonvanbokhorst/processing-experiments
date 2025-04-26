@@ -15,70 +15,171 @@ class Ant {
         this.maxForce = 0.2; // Max steering force limit
         this.senseDistance = 15; // << Modified: How far ahead to sense (20 to 15)
         this.senseAngle = PI / 4; // Angle offset for side sensors (45 degrees)
+
+        // --- Q-Learning Parameters ---
+        this.qTable = {}; // Using a simple Object for now: qTable[stateString] = {action1: value, action2: value}
+        this.learningRate = 0.1; // Alpha: How quickly we accept new Q-values
+        this.discountFactor = 0.9; // Gamma: Importance of future rewards
+        this.epsilon = 0.1; // Exploration rate (10% chance of random action)
+        this.actions = [-this.senseAngle / 2, 0, this.senseAngle / 2]; // Actions: Steer left, straight, right (adjust angles as needed)
+        this.prevStateAction = null; // Store { state: s, action: a } for Q-update
+        // -----------------------------
+        this.wasExploring = false; // << Visualization: Flag set true if last action was random exploration
+        this.exploreHighlightTimer = 0; // << Visualization: Timer to keep highlight for a few frames
     }
 
     // Method to update ant's position
     update(buffer) {
-        let wanderForce = createVector(0,0);
-        let pheromoneForce = createVector(0,0);
+        // Decrement highlight timer
+        if (this.exploreHighlightTimer > 0) {
+            this.exploreHighlightTimer--;
+        }
 
+        // --- Q-Learning Core Logic ---
+        const currentStateKey = this.getCurrentState(buffer); 
+        let chosenAction; // This will be the *angle* to turn
+
+        // Initialize Q-table entry for the state if it doesn't exist
+        if (!this.qTable[currentStateKey]) {
+            this.qTable[currentStateKey] = {};
+            // Initialize Q-values for all actions to 0 for this new state
+            this.actions.forEach(action => {
+                this.qTable[currentStateKey][action] = 0;
+            });
+        }
+
+        // Epsilon-greedy action selection
+        if (random(1) < this.epsilon) {
+            // Explore: Choose a random action
+            chosenAction = random(this.actions);
+            this.wasExploring = true; // Keep this flag if needed elsewhere, but timer is main display logic now
+            this.exploreHighlightTimer = 5; // << Set timer on exploration
+            // console.log(`Ant ${this.position.x.toFixed(0)} exploring: random action ${chosenAction.toFixed(2)}`);
+        } else {
+            // Exploit: Choose the best known action
+            chosenAction = this.getBestAction(currentStateKey);
+            this.wasExploring = false; 
+            // Timer simply decrements if not exploring
+            // console.log(`Ant ${this.position.x.toFixed(0)} exploiting: best action ${chosenAction.toFixed(2)} for state ${currentStateKey}`);
+        }
+
+        // Store current state and chosen action for the Q-update later
+        // We need to do the update *after* observing the reward and next state
+        const stateActionToUpdate = { state: currentStateKey, action: chosenAction }; 
+        // --------------------------
+
+        // --- Determine Target/Goal based on Ant State ---
+        let targetForce = createVector(0, 0);
         if (this.state === 'searching') {
-            // Check distance to food source
             let distanceToFood = dist(this.position.x, this.position.y, foodSource.x, foodSource.y);
-
-            if (distanceToFood < 10) { // If close enough to food
+            if (distanceToFood < 10) { 
                 this.state = 'returning';
-                this.velocity.mult(-1); // Reverse direction simple return logic
-                this.acceleration.mult(0); // Reset acceleration
+                this.velocity.mult(-1); 
+                this.acceleration.mult(0); 
                 console.log("Ant found food! Returning...");
+                // TODO: Assign Reward for finding food
+                this.prevStateAction = null; // Reset previous state/action when goal reached
             } else {
-                // --- Pheromone Sensing and Wandering ---
-                // 1. Sense Pheromones (will return a steering vector)
-                pheromoneForce = this.sensePheromones(buffer); 
-                
-                // 2. Apply Wander behavior (modified)
-                wanderForce = p5.Vector.random2D();
-                wanderForce.setMag(0.02); // << Modified: Reduced wander strength further (0.05 to 0.02)
-
-                // Combine forces (simple addition for now, could be weighted later)
-                this.applyForce(wanderForce);
-                this.applyForce(pheromoneForce); 
-                // this.velocity.limit(this.maxSpeed); // Limit speed (moved below)
+                // In Q-learning, we don't directly use pheromone/wander forces for steering
+                // The chosenAction dictates the turn.
+                // We might still use wander slightly? Or rely purely on Q-learning?
+                // Let's rely on Q-learning for now.
             }
         } else if (this.state === 'returning') {
-            // Check if back near the nest
-            let distanceToNest = dist(this.position.x, this.position.y, nestPosition.x, nestPosition.y); // << Modified: Use nestPosition
-            if (distanceToNest < 15) { // If close enough to nest
+            let distanceToNest = dist(this.position.x, this.position.y, nestPosition.x, nestPosition.y); 
+            if (distanceToNest < 15) { 
                 this.state = 'searching';
-                this.velocity = p5.Vector.random2D(); // Get a new random direction
+                this.velocity = p5.Vector.random2D(); 
                 this.velocity.setMag(random(1, 3));
-                 this.acceleration.mult(0); // Reset acceleration
+                this.acceleration.mult(0); 
                 console.log("Ant returned to nest. Searching again...");
+                // TODO: Assign Reward for returning to nest
+                this.prevStateAction = null; // Reset previous state/action when goal reached
             } else {
-                 // --- Steering towards Nest --- 
-                 let nestForce = this.steer(nestPosition); // << New: Calculate steering force towards the nest
-                 this.applyForce(nestForce); // << New: Apply the force
-
-                 // Ensure it doesn't stop completely if force calculation is zero
-                 if (this.velocity.magSq() < 0.1) {
-                     this.velocity = p5.Vector.random2D().setMag(this.maxSpeed); // Use maxSpeed
-                 }
-                 // this.velocity.limit(this.maxSpeed); // Limit speed (moved below)
+                 // Rely on Q-learning action to steer towards nest implicitly
             }
         }
 
-        // --- Obstacle Avoidance --- (Should ideally return a force)
-        let avoidanceForce = this.avoidObstacles(); // Modify avoidObstacles to return a force
-        this.applyForce(avoidanceForce);
+        // --- Apply Chosen Action ---
+        // Rotate the ant's velocity vector by the chosen action angle
+        const positionBeforeMove = this.position.copy(); // Store position *before* applying action/avoidance
+        this.velocity.rotate(chosenAction);
 
-        // --- Update movement ---
-        this.velocity.add(this.acceleration); // Update velocity with acceleration
-        this.velocity.limit(this.maxSpeed);   // Limit speed
-        this.position.add(this.velocity);     // Update position
-        this.acceleration.mult(0);            // Reset acceleration each cycle
+        // --- Obstacle Avoidance (Override?) ---
+        let avoidanceForce = this.avoidObstacles(); 
+        this.applyForce(avoidanceForce); 
+        const avoidingObstacle = avoidanceForce.magSq() > 0.001; // Check if avoidance kicked in
+        
+        // --- Update movement --- (Do this *before* calculating reward based on new position)
+        this.velocity.add(this.acceleration); 
+        this.velocity.limit(this.maxSpeed);   
+        this.position.add(this.velocity);     
+        this.acceleration.mult(0);            
+        this.checkEdges(); // Wrap around if needed
+        const positionAfterMove = this.position.copy(); // Position after move and edge check
 
-        // Basic boundary check (wrap around)
-        this.checkEdges();
+        // --- Q-Learning Update --- 
+        const nextStateKey = this.getCurrentState(buffer); // Get state *after* moving
+        
+        // --- Calculate Reward --- 
+        let reward = -0.01; // Base cost of living
+
+        // Reward for getting closer to the target
+        const target = this.state === 'searching' ? foodSource : nestPosition;
+        const distBefore = p5.Vector.dist(positionBeforeMove, target);
+        const distAfter = p5.Vector.dist(positionAfterMove, target);
+        if (distAfter < distBefore) {
+            reward += 0.05; // Small reward for progress
+        }
+        
+        // Penalty for hitting obstacle
+        if (avoidingObstacle) {
+             reward -= 1.0; // Penalty for needing to avoid
+             // console.log("--- PENALTY -1.0 (Obstacle Avoidance) ---");
+        }
+
+        // Check if the goal state changed (BIG Rewards)
+        const previousAntStateGoal = this.prevStateAction ? this.prevStateAction.state.split('_G:')[1].split('_')[0] : null; // Extract goal from prev state key
+        const currentAntStateGoal = this.state === 'searching' ? 'Food' : 'Nest'; // What the goal *is* now (might have been changed by goal check)
+        
+        if (previousAntStateGoal === 'Food' && currentAntStateGoal === 'Nest') {
+            reward += 10.0; // Large positive reward for finding food
+            console.log("***** REWARD +10 (Found Food) *****")
+        } else if (previousAntStateGoal === 'Nest' && currentAntStateGoal === 'Food') {
+            reward += 10.0; // Large positive reward for returning home
+            console.log("***** REWARD +10 (Returned Nest) *****")
+        }
+        // -----------------------
+        
+        // If we have a previous state/action pair to update...
+        if (this.prevStateAction) {
+             const s = this.prevStateAction.state;
+             const a = this.prevStateAction.action;
+             const s_prime = nextStateKey; 
+             const r = reward; // Use the calculated reward
+
+             // Ensure Q-table entries exist (might be redundant if initialized above, but safe)
+             if (!this.qTable[s]) this.qTable[s] = {};
+             if (this.qTable[s][a] === undefined) this.qTable[s][a] = 0;
+             if (!this.qTable[s_prime]) { // Ensure next state exists for maxQ calculation
+                 this.qTable[s_prime] = {};
+                  this.actions.forEach(next_action => {
+                      this.qTable[s_prime][next_action] = 0;
+                  });
+             }
+
+             // Q-Learning formula: Q(s, a) = Q(s, a) + alpha * (r + gamma * max_a'(Q(s', a')) - Q(s, a))
+             const oldQ = this.qTable[s][a];
+             const maxNextQ = this.qTable[s_prime][this.getBestAction(s_prime)]; // Q-value of best action from next state
+             const newQ = oldQ + this.learningRate * (r + this.discountFactor * maxNextQ - oldQ);
+             
+             this.qTable[s][a] = newQ;
+            // console.log(`Updated Q(${s}, ${a.toFixed(2)}): ${oldQ.toFixed(3)} -> ${newQ.toFixed(3)} (r=${r}, maxNextQ=${maxNextQ.toFixed(3)})`);
+        }
+        
+        // Store the state and action *we just took* for the *next* iteration's update
+        this.prevStateAction = stateActionToUpdate;
+        // ------------------------
     }
 
     // Method to handle canvas boundaries
@@ -105,7 +206,9 @@ class Ant {
         // Optional: Rotate based on velocity direction
         // rotate(this.velocity.heading());
 
-        if (this.state === 'returning') {
+        if (this.exploreHighlightTimer > 0) { // << Check timer instead of flag
+            fill(255, 255, 0); // Yellow for exploring ants (for a few frames)
+        } else if (this.state === 'returning') {
             fill(0, 255, 255); // Cyan for returning ants
         } else {
             fill(255); // White for searching ants
@@ -146,8 +249,6 @@ class Ant {
     
     // << New: Method to sense pheromones
     sensePheromones(buffer) {
-        let steerForce = createVector(0, 0);
-        
         // Calculate sensor positions
         let centerPos = p5.Vector.add(this.position, this.velocity.copy().setMag(this.senseDistance));
         let leftPos = p5.Vector.add(this.position, this.velocity.copy().rotate(-this.senseAngle).setMag(this.senseDistance));
@@ -158,27 +259,80 @@ class Ant {
         let leftIntensity = this.getPheromoneIntensity(buffer, leftPos.x, leftPos.y);
         let rightIntensity = this.getPheromoneIntensity(buffer, rightPos.x, rightPos.y);
 
-        // --- Decision Logic ---
-        // Basic: Steer towards the strongest signal
-        if (centerIntensity > leftIntensity && centerIntensity > rightIntensity) {
-             // Steer forward (already going that way, maybe add slight force?)
-             // steerForce = this.velocity.copy().normalize().mult(this.maxForce * 0.5 * centerIntensity); // Intensity used to scale
-        } else if (leftIntensity > rightIntensity) {
-            // Steer left
-            let desiredLeft = p5.Vector.sub(leftPos, this.position);
-             steerForce = this.steer(leftPos); // Use the steer method
-             steerForce.mult(leftIntensity); // Scale by intensity
-        } else if (rightIntensity > leftIntensity) {
-            // Steer right
-             let desiredRight = p5.Vector.sub(rightPos, this.position);
-             steerForce = this.steer(rightPos); // Use the steer method
-             steerForce.mult(rightIntensity); // Scale by intensity
-        } 
-        // If all are zero, steerForce remains (0,0) -> relies on wander
+        // Return the raw intensities
+        return { left: leftIntensity, center: centerIntensity, right: rightIntensity };
+    }
 
-        steerForce.limit(this.maxForce); // Ensure pheromone force doesn't exceed max
-        steerForce.mult(2.0); // << New: Amplify the calculated pheromone force
-        return steerForce;
+    // << Q-Learning: Method to get the discretized current state string
+    getCurrentState(buffer) {
+        const intensities = this.sensePheromones(buffer);
+
+        // Discretize pheromone intensities
+        const discretizeIntensity = (value) => {
+            if (value < 0.2) return 'L';
+            if (value < 0.7) return 'M';
+            return 'H';
+        };
+
+        const pLeft = discretizeIntensity(intensities.left);
+        const pCenter = discretizeIntensity(intensities.center);
+        const pRight = discretizeIntensity(intensities.right);
+
+        // Determine target and calculate relative direction
+        const target = this.state === 'searching' ? foodSource : nestPosition;
+        const vectorToTarget = p5.Vector.sub(target, this.position);
+        const angleToTarget = vectorToTarget.heading(); // Absolute angle to target
+        const antHeading = this.velocity.heading(); // Ant's current direction
+        let relativeAngle = angleToTarget - antHeading;
+
+        // Normalize angle to be between -PI and PI
+        while (relativeAngle > PI) relativeAngle -= TWO_PI;
+        while (relativeAngle <= -PI) relativeAngle += TWO_PI;
+
+        // Discretize relative angle
+        let targetDirection = 'Ahead'; // Default
+        const angleThreshold = PI / 4; // 45 degrees
+        if (relativeAngle > angleThreshold && relativeAngle <= 3 * angleThreshold) {
+             targetDirection = 'Right';
+        } else if (relativeAngle < -angleThreshold && relativeAngle >= -3 * angleThreshold) {
+             targetDirection = 'Left';
+        } else if (abs(relativeAngle) > 3 * angleThreshold) {
+             targetDirection = 'Behind';
+        }
+
+        // Combine into a state string
+        const goal = this.state === 'searching' ? 'Food' : 'Nest';
+        return `P:${pLeft}-${pCenter}-${pRight}_G:${goal}_T:${targetDirection}`;
+    }
+
+    // << Q-Learning: Helper to get the action with the highest Q-value for a state
+    getBestAction(stateKey) {
+        const stateActions = this.qTable[stateKey];
+        if (!stateActions) {
+            // If state is unknown, maybe return a default action (e.g., 0 for straight)
+            // Or, we could initialize Q-values for this state here
+            return 0; // Go straight if state is new
+        }
+
+        let bestAction = 0; // Default to straight
+        let maxQ = -Infinity;
+        let actionsExist = false;
+
+        // Find the action index corresponding to the highest Q-value
+        // Note: We are storing Q-values keyed by the *action value* (the angle) itself.
+        for (const action of this.actions) {
+            const qValue = stateActions[action] !== undefined ? stateActions[action] : 0; // Default Q-value is 0 if action hasn't been tried
+            if (qValue > maxQ) {
+                maxQ = qValue;
+                bestAction = action;
+                actionsExist = true;
+            }
+        }
+        
+        // If no actions had non-zero Q-values (or state was just initialized), maybe default to straight or random?
+        // For now, it defaults to the action with Q=0 (or the last one checked if all are -Infinity, though that shouldn't happen with default 0)
+        // Let's stick with returning the action associated with the highest Q found (even if 0)
+        return bestAction;
     }
 
     // << New: Helper to get pheromone intensity from buffer
