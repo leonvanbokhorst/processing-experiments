@@ -1,0 +1,9 @@
+---
+description: implement the next phase
+globs: 
+alwaysApply: false
+---
+Ok given [the-plan.md](mdc:the-plan.md) :
+
+- find the latest phase implementatie doc (highest phase-xx.md) in the root of the project
+- start implementing based on that document
