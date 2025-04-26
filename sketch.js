@@ -1,111 +1,74 @@
-// Ant Colony Simulation - Step 1: Basic Ants
-
-let ants = [];
-let numAnts = 50;
+let swarm = [];
+const canvasWidth = 800;
+const canvasHeight = 600;
+const numAnts = 50; // Number of ants in our swarm
+let pheromoneBuffer; // Off-screen buffer for pheromones
+let foodSource; // Variable to hold the food source position
+let obstacles = []; // Array to hold obstacles
+let nestPosition; // << New: Position of the nest
 
 function setup() {
-  createCanvas(windowWidth, windowHeight);
-  background(30); // Dark grey background
-  // Initialize ants
+  let canvas = createCanvas(canvasWidth, canvasHeight);
+  canvas.parent('canvas-container'); // Attach canvas using the new ID
+  console.log("Canvas created. Ant simulation starting...");
+
+  // Initialize the pheromone buffer
+  pheromoneBuffer = createGraphics(canvasWidth, canvasHeight, { willReadFrequently: true });
+  pheromoneBuffer.background(51, 0); // Initialize with background color but fully transparent
+
+  // Initialize food source position
+  foodSource = createVector(canvasWidth * 0.8, canvasHeight * 0.2); // Top-right quadrant
+
+  // << New: Initialize nest position
+  nestPosition = createVector(canvasWidth * 0.1, canvasHeight / 2); // Center-left
+
+  // Initialize obstacles
+  obstacles.push({ 
+    x: canvasWidth / 2 - 50, 
+    y: canvasHeight / 2 - 10, 
+    width: 100, 
+    height: 20 
+  });
+  console.log("Initialized obstacles.");
+
+  // Populate the swarm array
   for (let i = 0; i < numAnts; i++) {
-    ants.push(new Ant(random(width), random(height)));
+    swarm.push(new Ant()); // Create ants with random starting positions
   }
-  console.log(`Initialized ${numAnts} wandering ants.`);
+  console.log(`Initialized swarm with ${numAnts} ants.`);
 }
 
 function draw() {
-  // A slightly fading background for subtle trails
-  background(30, 30, 35, 50); 
+  background(51); // Dark gray background for the main canvas
 
-  // Update and display all ants
-  for (let ant of ants) {
-    ant.wander(); // Apply wandering force
-    ant.update(); // Update position based on velocity
-    ant.edges();  // Handle screen edges
-    ant.display(); // Draw the ant
-  }
-}
+  // Apply decay effect to the pheromone buffer
+  // Draw a semi-transparent rectangle over the buffer to make trails fade
+  pheromoneBuffer.background(51, 5); // Faster decay
 
-// Ant class
-class Ant {
-  constructor(x, y) {
-    this.pos = createVector(x, y);
-    this.vel = p5.Vector.random2D(); // Start with a random direction
-    this.vel.setMag(random(1, 3)); // Random initial speed
-    this.acc = createVector(0, 0);
-    this.maxSpeed = 3;    // Max speed limit
-    this.maxForce = 0.1;  // Max steering force
+  // Draw the pheromone buffer onto the main canvas
+  image(pheromoneBuffer, 0, 0);
 
-    // Perlin noise offsets for wandering
-    this.noiseOffsetX = random(1000);
-    this.noiseOffsetY = random(2000);
-    this.noiseOffsetAngle = random(3000);
+  // Draw the food source
+  fill(0, 255, 0); // Green color for food
+  noStroke();
+  ellipse(foodSource.x, foodSource.y, 16, 16); // Draw a circle for the food
+
+  // << New: Draw the nest
+  fill(100, 100, 255); // Light blue for nest
+  noStroke();
+  ellipse(nestPosition.x, nestPosition.y, 20, 20); // Draw a circle for the nest
+
+  // Draw obstacles
+  fill(120, 0, 0); // Dark red color for obstacles
+  noStroke();
+  for (let obs of obstacles) {
+    rect(obs.x, obs.y, obs.width, obs.height);
   }
 
-  // Apply force (used by steering behaviors like wander)
-  applyForce(force) {
-    this.acc.add(force);
+  // Update, drop pheromones, and display each ant in the swarm
+  for (let ant of swarm) {
+    ant.update(pheromoneBuffer);
+    ant.dropPheromone(pheromoneBuffer);
+    ant.display(); // Draw ant on the main canvas (on top of pheromones)
   }
-
-  // --- Behaviors ---
-  wander() {
-    // Use Perlin noise to generate a smoothly changing angle
-    let wanderAngle = noise(this.noiseOffsetAngle) * TWO_PI * 2 - TWO_PI; // Map noise (0-1) to (-TWO_PI to TWO_PI)
-    this.noiseOffsetAngle += 0.02; // Move through noise space
-
-    // Create a vector pointing slightly ahead
-    let wanderTarget = this.vel.copy();
-    wanderTarget.normalize();
-    wanderTarget.mult(15); // Project target slightly forward
-    wanderTarget.add(this.pos);
-
-    // Add a small displacement based on the wander angle
-    let wanderRadius = 5;
-    let displacement = p5.Vector.fromAngle(wanderAngle + this.vel.heading());
-    displacement.mult(wanderRadius);
-
-    let steer = wanderTarget.add(displacement); // Combine forward projection and displacement
-    steer.sub(this.pos); // Vector from current pos to target
-    steer.setMag(this.maxForce); // Scale to max steering force
-    this.applyForce(steer);
-  }
-
-  // --- Physics Update ---
-  update() {
-    this.vel.add(this.acc);
-    this.vel.limit(this.maxSpeed);
-    this.pos.add(this.vel);
-    // Reset acceleration each frame
-    this.acc.mult(0);
-  }
-
-  // --- Display ---
-  display() {
-    // Simple display: a point or small circle
-    stroke(255, 255, 255, 200); // White, semi-transparent
-    strokeWeight(3);
-    point(this.pos.x, this.pos.y);
-
-    // Optional: Draw heading vector for debugging
-    // push();
-    // translate(this.pos.x, this.pos.y);
-    // rotate(this.vel.heading());
-    // stroke(0, 255, 0);
-    // line(0, 0, 10, 0);
-    // pop();
-  }
-
-  // --- Edge Handling ---
-  edges() {
-    // Wrap around edges
-    if (this.pos.x > width) this.pos.x = 0;
-    if (this.pos.x < 0) this.pos.x = width;
-    if (this.pos.y > height) this.pos.y = 0;
-    if (this.pos.y < 0) this.pos.y = height;
-  }
-}
-
-function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
-  background(30);
 } 

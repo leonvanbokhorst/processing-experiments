@@ -1,0 +1,6 @@
+---
+description: create next phase doc
+globs: 
+alwaysApply: false
+---
+Ok given [the-plan.md](mdc:the-plan.md) and the current state of the project create a phase doc for the next phase
