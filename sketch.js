@@ -3,6 +3,7 @@ const canvasWidth = 800;
 const canvasHeight = 600;
 const numAnts = 50; // Number of ants in our swarm
 let pheromoneBuffer; // Off-screen buffer for pheromones
+let foodSource; // Variable to hold the food source position
 
 function setup() {
   let canvas = createCanvas(canvasWidth, canvasHeight);
@@ -12,6 +13,9 @@ function setup() {
   // Initialize the pheromone buffer
   pheromoneBuffer = createGraphics(canvasWidth, canvasHeight);
   pheromoneBuffer.background(51, 0); // Initialize with background color but fully transparent
+
+  // Initialize food source position
+  foodSource = createVector(canvasWidth * 0.8, canvasHeight * 0.2); // Top-right quadrant
 
   // Populate the swarm array
   for (let i = 0; i < numAnts; i++) {
@@ -29,6 +33,11 @@ function draw() {
 
   // Draw the pheromone buffer onto the main canvas
   image(pheromoneBuffer, 0, 0);
+
+  // Draw the food source
+  fill(0, 255, 0); // Green color for food
+  noStroke();
+  ellipse(foodSource.x, foodSource.y, 16, 16); // Draw a circle for the food
 
   // Update, drop pheromones, and display each ant in the swarm
   for (let ant of swarm) {
